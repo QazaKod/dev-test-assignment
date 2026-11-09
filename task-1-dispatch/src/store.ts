@@ -12,4 +12,5 @@ export const branches: Branch[] = load('branches.json');
 export const orders: Order[] = load('orders.json');
 
 // orderId -> распределение
+
 export const assignments = new Map<string, Assignment>();

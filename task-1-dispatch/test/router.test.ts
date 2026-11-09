@@ -63,7 +63,36 @@ test('geo: без координат заказ не распределяетс�
   assert.equal(res.rule, 'unassigned');
 });
 
-test.todo('pickup_point: пункт выдачи закреплён за филиалом');
-test.todo('city: в городе заказа один филиал магазина');
-test.todo('geo: если в городе несколько филиалов, выбирается ближайший из них');
-test.todo('лимит: заполненный филиал пропускается');
+test('pickup_point: пункт выдачи закреплён за филиалом', () => {
+  const pickup = branch({ ...astana, pickupPointIds: ['pp-5'] });
+  const res = assignBranch(order({ pickupPointId: 'pp-5' }), [almaty, pickup]);
+  assert.equal(res.branchId, 'b-ast');
+  assert.equal(res.rule, 'pickup_point');
+});
+
+test('city: в городе заказа один филиал магазина', () => {
+  const res = assignBranch(order({ city: 'Астана' }), [almaty, astana]);
+  assert.equal(res.branchId, 'b-ast');
+  assert.equal(res.rule, 'city');
+});
+
+test('geo: если в городе несколько филиалов, выбирается ближайший из них', () => {
+  const far = branch({ id: 'b-far', city: 'Алматы', lat: 43.4, lon: 76.99 });
+  const res = assignBranch(order({ city: 'Алматы', lat: 43.25, lon: 76.92 }), [almaty, far]);
+  assert.equal(res.branchId, 'b-ala');
+  assert.equal(res.rule, 'geo');
+});
+
+test('лимит: заполненный филиал пропускается', () => {
+  const busy = branch({ ...almaty, dailyLimit: 1 });
+  const free = branch({ ...astana });
+  const prevOrder = order({ id: 'prev' });
+  const assignments = new Map([
+    [prevOrder.id, { orderId: prevOrder.id, branchId: busy.id, rule: 'single' as const }]
+  ]);
+
+  // Филиал busy уже забит 1 заказом, поэтому новый заказ должен уйти в free
+  const res = assignBranch(order({ id: 'new', city: 'Алматы' }), [busy, free], assignments, [prevOrder]);
+  assert.equal(res.branchId, free.id);
+  assert.equal(res.rule, 'geo');
+});

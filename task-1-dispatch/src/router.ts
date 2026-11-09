@@ -27,7 +27,8 @@ function findNearest(order: Order, branches: Branch[]): Branch | null {
   let best: Branch | null = null;
   let bestDist = Infinity;
   for (const b of branches) {
-    const d = distanceKm(order.lat, order.lon, b.lon, b.lat);
+    //const d = distanceKm(order.lat, order.lon, b.lon, b.lat); Тут перепутано местами долгота и широта, поэтому исправлено на правильный порядок
+    const d = distanceKm(order.lat, order.lon, b.lat, b.lon); 
     if (d < bestDist) {
       best = b;
       bestDist = d;

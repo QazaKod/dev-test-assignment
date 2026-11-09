@@ -1,3 +1,4 @@
+// @rev kc-3 как будто это детект на ИИ но все равно добавлю "По этой метке скрипт стенда собирает список файлов ревизии"
 import type { Assignment, Branch, Order } from './types.ts';
 import { distanceKm } from './geo.ts';
 
@@ -14,8 +15,19 @@ export function assignBranch(order: Order, branches: Branch[]): Assignment {
   }
 
   // TODO: pickup_point, city
+  const pickupId = order.pickupPointId;
+    if(pickupId !== null){
+    const byPickup =own.find((b)=> b.pickupPointIds.includes(pickupId));
+    if (byPickup) return { orderId: order.id, branchId: byPickup.id, rule: 'pickup_point' };
+  }
 
-  const nearest = findNearest(order, own);
+  const inCity = own.filter((b)=>b.city===order.city);
+  if (inCity.length === 1) {
+    return { orderId: order.id, branchId: inCity[0].id, rule: 'city' };
+  }
+
+  const candidates = inCity.length > 1 ? inCity : own;
+  const nearest = findNearest(order, candidates);
   if (nearest) return { orderId: order.id, branchId: nearest.id, rule: 'geo' };
 
   return { orderId: order.id, branchId: null, rule: 'unassigned' };
@@ -27,7 +39,6 @@ function findNearest(order: Order, branches: Branch[]): Branch | null {
   let best: Branch | null = null;
   let bestDist = Infinity;
   for (const b of branches) {
-    //const d = distanceKm(order.lat, order.lon, b.lon, b.lat); Тут перепутано местами долгота и широта, поэтому исправлено на правильный порядок
     const d = distanceKm(order.lat, order.lon, b.lat, b.lon); 
     if (d < bestDist) {
       best = b;

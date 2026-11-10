@@ -3,10 +3,12 @@ import { getSlots } from './slots.ts';
 import { bookingRepo, masters, services } from './store.ts';
 import { randomUUID } from 'node:crypto';
 import type { Booking } from './types.ts';
+import { now } from './clock.ts';
 
 const port = Number(process.env.PORT ?? 3002);
 
 const ala_offset_ms = 5 * 60 * 60_000;
+const TWO_HOURS_MS = 2 * 60 * 60_000;
 
 function parseStart(value: unknown): Date | null {
   if (typeof value !== 'string') return null;
@@ -127,6 +129,22 @@ const server = createServer(async (req, res) => {
 
       if (!created) return send(res, 409, { error: 'slot_unavailable' });
       return send(res, 201, created);
+    }
+
+    if (req.method === 'DELETE' && parts[0] === 'bookings' && parts.length === 2) {
+      const result = await withMasterLock(`booking:${parts[1]}`, async () => {
+        const booking = await bookingRepo.get(parts[1]);
+        if (!booking) return { status: 404, body: { error: 'booking_not_found' } };
+        if (booking.status === 'cancelled') return { status: 200, body: booking };
+
+        if (new Date(booking.start).getTime() - now().getTime() < TWO_HOURS_MS) {
+          return { status: 409, body: { error: 'too_late' } };
+        }
+
+        await bookingRepo.update(booking.id, { status: 'cancelled' });
+        return { status: 200, body: { ...booking, status: 'cancelled' } };
+      });
+      return send(res, result.status, result.body);
     }
 
     send(res, 404, { error: 'not_found' });

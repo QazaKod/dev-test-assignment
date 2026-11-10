@@ -79,6 +79,56 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { masterId: master.id, serviceId: service.id, date, slots });
     }
 
+    if (req.method === 'POST' && url.pathname === '/bookings') {
+      let body: unknown;
+      try {
+        body = await readJson(req);
+      } catch {
+        return send(res, 400, { error: 'invalid_json' });
+      }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return send(res, 400, { error: 'invalid_request' });
+      }
+      const input = body as Record<string, unknown>;
+      if (typeof input.masterId !== 'string' || typeof input.serviceId !== 'string') {
+        return send(res, 400, { error: 'invalid_request' });
+      }
+
+      const master = masters.find((m) => m.id === input.masterId);
+      if (!master) return send(res, 404, { error: 'master_not_found' });
+      const service = services.find((s) => s.id === input.serviceId);
+      if (!service) return send(res, 404, { error: 'service_not_found' });
+
+      const start = parseStart(input.start);
+      const clientPhone = normalizePhone(input.clientPhone);
+      if (!start || !clientPhone || !service.masterIds.includes(master.id)) {
+        return send(res, 400, { error: 'invalid_request' });
+      }
+
+      const created = await withMasterLock(master.id, async () => {
+        if (start.getUTCSeconds() !== 0 || start.getUTCMilliseconds() !== 0) return null;
+        const local = new Date(start.getTime() + ala_offset_ms).toISOString();
+        const bookings = await bookingRepo.listByMaster(master.id);
+        if (!getSlots(master, service, local.slice(0, 10), bookings).includes(local.slice(11, 16))) {
+          return null;
+        }
+        const booking: Booking = {
+          id: `bk-${randomUUID()}`,
+          masterId: master.id,
+          serviceId: service.id,
+          start: start.toISOString(),
+          end: new Date(start.getTime() + service.durationMin * 60_000).toISOString(),
+          clientPhone,
+          status: 'active',
+        };
+        await bookingRepo.insert(booking);
+        return booking;
+      });
+
+      if (!created) return send(res, 409, { error: 'slot_unavailable' });
+      return send(res, 201, created);
+    }
+
     send(res, 404, { error: 'not_found' });
   } catch (err) {
     console.error(err);

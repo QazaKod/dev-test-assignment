@@ -1,8 +1,45 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { getSlots } from './slots.ts';
 import { bookingRepo, masters, services } from './store.ts';
+import { randomUUID } from 'node:crypto';
+import type { Booking } from './types.ts';
 
 const port = Number(process.env.PORT ?? 3002);
+
+const ala_offset_ms = 5 * 60 * 60_000;
+
+function parseStart(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/i.test(value)) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normalizePhone(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!/^\+?[\d\s()-]+$/.test(trimmed)) return null;
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length !== 11) return null;
+  if (trimmed.startsWith('+') ? digits[0] !== '7' : digits[0] !== '7' && digits[0] !== '8') return null;
+  const national = digits.slice(1);
+  if (national[0] !== '7') return null;
+  return `+7${national}`;
+}
+
+const locks = new Map<string, Promise<unknown>>();
+
+async function withMasterLock<T>(masterId: string, action: () => Promise<T>): Promise<T> {
+  const previous = locks.get(masterId) ?? Promise.resolve();
+  const run = previous.then(action, action);
+  const tail = run.catch(() => undefined);
+  locks.set(masterId, tail);
+  try {
+    return await run;
+  } finally {
+    if (locks.get(masterId) === tail) locks.delete(masterId);
+  }
+}
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
